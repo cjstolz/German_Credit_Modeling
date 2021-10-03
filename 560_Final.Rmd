@@ -1,0 +1,378 @@
+---
+title: "560_Final"
+author: "Cody Stolz"
+date: "3/10/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error=TRUE)
+```
+
+
+#Question 1
+```{r load these packages}
+library(mlbench)
+library(e1071)
+library(klaR)
+library(nnet)
+library(rpart)
+library(party)
+library(ipred)
+library(ROCR)
+library(randomForest)
+library(caret)
+library(caretEnsemble)
+library(dplyr)
+library(adabag)
+library(neuralnet)
+library(nnet)
+library(janitor)
+```
+
+#We will use the Gernam credit data from the caret package
+```{r load data}
+data("GermanCredit")
+GermanCredit <- data.frame(GermanCredit[1:10])
+str(GermanCredit)
+```
+
+
+#to ensure balanced data lets look at our dependant variable, for this it will be Class. 
+
+```{r sum class}
+summary(GermanCredit$Class)
+```
+
+#seeing the imbalnce, I will choose to sample all 300 bad as well as 300 good for the training and validations sets. 
+
+
+```{r subset data}
+German1 <- subset(GermanCredit, Class=="Bad")
+German2 <- subset(GermanCredit, Class=="Good")
+German3 <- German2 %>% slice(1:300)
+German_Full <- rbind(German1, German3)
+```
+
+#Now we have a balanced dataset based on our dependant variable. 
+
+#I wwill sample two different sizes of the data set, 300 and 600 
+```{r # partition data large} 
+set.seed(1)  # set seed for reproducing the partition
+train.index <- sample(c(1:600), 300)  
+train.df <- German_Full[train.index, ]
+valid.df <- German_Full[-train.index, ]
+```
+
+#Sample number 2
+```{r # partition data small} 
+set.seed(1)  # set seed for reproducing the partition
+train.index2 <- sample(c(1:600), 150)  
+train.df2 <- German_Full[train.index2, ]
+valid.df2 <- German_Full[-train.index2, ]
+```
+
+
+#Run two different classifier models on all datasets, 8 total
+
+#GLM on Large data set
+
+```{r train control german credit}
+trCntl <- trainControl(method = "CV",number = 5)
+Large_glm <- train(Class ~ .,data = train.df, trControl = trCntl,method="glm",family = "binomial")
+# print the model info
+summary(Large_glm)
+Large_glm
+confusionMatrix(Large_glm)
+```
+#Not the best accuracy, it looks like the glm model is not that good at classifying our data
+
+#glm on the valid dataset
+```{r train control }
+trCntl <- trainControl(method = "CV",number = 5)
+LValid_glm <- train(Class ~ .,data = valid.df, trControl = trCntl,method="glm",family = "binomial")
+# print the model info
+summary(LValid_glm)
+LValid_glm
+confusionMatrix(LValid_glm)
+```
+
+#slightly better accuracy on the valid dataset
+
+
+#Second Classifier model 
+```{r rpart 1}
+German_Tree1<- rpart(Class ~., train.df)
+plot(German_Tree1); text(German_Tree1) 
+pred1 <- predict(German_Tree1, valid.df, type = "class") 
+confusionMatrix(pred1, valid.df$Class)
+```
+
+#rpart does not do teh best job either with its accuracy 
+
+
+```{r rpart 2}
+German_Tree2 <- rpart(Class ~., valid.df)
+plot(German_Tree2); text(German_Tree2) 
+pred2 <- predict(German_Tree2, valid.df, type = "class") 
+confusionMatrix(pred2, valid.df$Class)
+```
+
+
+#The accuracy on the valid dataset jumps significantly. This may be due to the way the data randomly partitioned in the training and validation sets. 
+
+#small dataset models
+```{r train control glm small data}
+trCntl <- trainControl(method = "CV",number = 5)
+sm_glm <- train(Class ~ .,data = train.df2, trControl = trCntl,method="glm",family = "binomial")
+# print the model info
+summary(sm_glm)
+sm_glm
+confusionMatrix(sm_glm)
+```
+
+#The small here has a pretty bad accuracy on the small training dataset. 
+
+```{r train control 1}
+trCntl <- trainControl(method = "CV",number = 5)
+Sm_val <- train(Class ~ .,data = valid.df2, trControl = trCntl,method="glm",family = "binomial")
+# print the model info
+summary(Sm_val)
+Sm_val
+confusionMatrix(Sm_val)
+```
+#Once again we see the accuracy increase with the valid dataset
+
+
+```{r rpart 3}
+German_Tree3 <- rpart(Class ~., train.df2)
+plot(German_Tree3); text(German_Tree3) 
+pred3 <- predict(German_Tree3, valid.df, type = "class") 
+confusionMatrix(pred3, valid.df$Class)
+```
+
+#Rpart does a decent job initially at classfiying or data. 
+
+```{r rpart 4}
+German_Tree4 <- rpart(Class ~., valid.df2)
+plot(German_Tree4); text(German_Tree4) 
+pred4 <- predict(German_Tree4, valid.df, type = "class") 
+confusionMatrix(pred4, valid.df$Class)
+```
+
+#The valid dataset does a better job again. 
+
+#D: compare the models, which model would you select? 
+#Train Large glm: .55
+#Train Small glm: .5
+#valid Large glm: .63
+#Valid Small glm: .62
+
+#Train Large rpart: .57
+#Train Small rpart: .59
+#valid Large rpart: .75
+#Valid Small rpart: .72
+#On average it looks liek rpart does a better job at classifying our data. 
+
+
+#use bagging and boosting on the large dataset model listed above
+```{r bagging 1}
+bag <- bagging(Class ~ ., data = train.df) 
+pred5 <- predict(bag, valid.df, type = "class") 
+confusionMatrix(pred5, as.factor(valid.df$Class))
+```
+#Boosting on the large dataset model above
+```{r boosting 1}
+boost <- boosting(Class ~ ., data = train.df) 
+pred6 <- predict(boost, valid.df, type = "class") 
+confusionMatrix(as.factor(pred6$class), valid.df$Class)
+```
+
+#Bagging on the small dataset 
+```{r bagging 2}
+bag2 <- bagging(Class ~ ., data = train.df2) 
+pred6 <- predict(bag2, valid.df2, type = "class") 
+confusionMatrix(as.factor(pred6$class), as.factor(valid.df2$Class))
+```
+
+#Boosting on the small dataset
+```{r boosting 2}
+boost2 <- boosting(Class ~ ., data = train.df2) 
+pred7 <- predict(boost2, valid.df2, type = "class") 
+confusionMatrix(as.factor(pred7$class), valid.df2$Class)
+```
+
+#Bagging Large: .56
+#Bagging Small: .61
+
+#Boosting Large: .55
+#Boosting Small: .60
+
+#Overall it does not look like bagging and boosting will play a significant effect in increasing the accuracy of our classifer models. I would recommend sticking to the standard rpart model and exploring a stacking or ensemble method. 
+
+#Question 4B run the regression and see if you can get the same results 
+
+```{r import bug data}
+Bugs <- read.csv("C:/Users/fersh/OneDrive/Documents/MSBA/560/DMBA-R-datasets/LRTEST.csv", header = TRUE)
+head(Bugs)
+str(Bugs)
+```
+
+
+
+```{r run logistic regression on data}
+Bugs$Death <- as.factor(Bugs$Death)
+Bugs_Reg <- glm(Death ~., family = binomial(), Bugs)
+summary(Bugs_Reg)
+```
+
+
+
+
+
+#Question 6: Neural Network 
+
+#Conduct 8 experiments using any data set
+
+```{r like and dislike}
+GermanCredit$Bad <- GermanCredit$Class=="Bad"
+GermanCredit$Good <- GermanCredit$Class=="Good"
+```
+
+#base learning rate with two values, 3 hidden
+```{r nn}
+set.seed(1)
+nn <- neuralnet(Bad + Good ~ Duration + Amount, data = GermanCredit, linear.output = F, hidden = 3)
+```
+
+
+```{r # plot network 1}
+plot(nn, rep="best")
+```
+
+
+```{r Confusion Matrix 1}
+predict <- compute(nn, data.frame(GermanCredit$Duration, GermanCredit$Amount))
+predicted.class=apply(predict$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+#iteration2 change hidden to 1, base learning rate, two values 
+```{r nn2}
+set.seed(1)
+nn2 <- neuralnet(Bad + Good ~ Duration + Amount, data = GermanCredit, linear.output = F, hidden = 1)
+```
+
+```{r # plot network 2}
+plot(nn2, rep="best")
+```
+
+```{r confusion matrix 2}
+predict2 <- compute(nn2, data.frame(GermanCredit$Duration, GermanCredit$Amount))
+predicted.class=apply(predict2$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 3 change hidden to 3 add another layer by inputting one more value (Age), base learning rate 
+```{r nn 3}
+set.seed(1)
+nn3 <- neuralnet(Bad + Good ~ Duration + Amount + Age, data = GermanCredit, linear.output = F, hidden = 3)
+```
+
+```{r # plot network}
+plot(nn3, rep="best")
+```
+
+```{r confusion matrix 3}
+predict3 <- compute(nn3, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age))
+predicted.class=apply(predict3$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 4 change hidden to 1 again with add another layer Age, base learning rate 
+```{r partition data}
+set.seed(1)
+nn4 <- neuralnet(Bad + Good ~ Duration + Amount + Age, data = GermanCredit, linear.output = F, hidden = 1)
+```
+
+```{r # plot network 4}
+plot(nn4, rep="best")
+```
+
+```{r confusion matrix 4}
+predict4 <- compute(nn4, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age))
+predicted.class=apply(predict4$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 4 change hidden to 1 again with add another layer Age change learning rate to .03
+```{r nn5}
+set.seed(1)
+nn5 <- neuralnet(Bad + Good ~ Duration + Amount + Age, data = GermanCredit, linear.output = F, hidden = 1, learningrate = .03)
+```
+
+```{r # plot network 5}
+plot(nn5, rep="best")
+```
+
+```{r confusion matrix 5}
+predict5 <- compute(nn5, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age))
+predicted.class=apply(predict5$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 6 change hidden to 5, add more dataset inputs to layers, keep learning rate  .05
+```{r nn6}
+set.seed(1)
+nn6 <- neuralnet(Bad + Good ~ Duration + Amount + Age + InstallmentRatePercentage + ResidenceDuration + NumberExistingCredits, data = GermanCredit, linear.output = F, hidden = 5, learningrate = .05)
+```
+
+```{r # plot network 6}
+plot(nn6, rep="best")
+```
+
+```{r confusion matrix 6}
+predict6 <- compute(nn6, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age, GermanCredit$InstallmentRatePercentage, GermanCredit$ResidenceDuration, GermanCredit$NumberExistingCredits))
+predicted.class=apply(predict6$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 7 change hidden to 4 with same all dataset layers, keep learning rate  .05
+```{r nn7}
+set.seed(1)
+nn7 <- neuralnet(Bad + Good ~ Duration + Amount + Age + Telephone, data = GermanCredit, linear.output = F, hidden = 4, learningrate = .05)
+```
+
+```{r # plot network 7}
+plot(nn7, rep="best")
+```
+
+```{r confusion matrix 7}
+predict7 <- compute(nn7, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age, GermanCredit$Telephone))
+predicted.class=apply(predict7$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+#iteration 8 change hidden to 3 with same all dataset layers, keep learning rate  .01
+```{r nn8}
+set.seed(1)
+nn8 <- neuralnet(Bad + Good ~ Duration + Amount + Age + Telephone, data = GermanCredit, linear.output = F, hidden = 3, learningrate = .01)
+```
+
+```{r # plot network 8}
+plot(nn8, rep="best")
+```
+
+```{r confusion matrix 8}
+predict8 <- compute(nn8, data.frame(GermanCredit$Duration, GermanCredit$Amount, GermanCredit$Age, GermanCredit$Telephone))
+predicted.class=apply(predict8$net.result,1,which.max)-1
+confusionMatrix(as.factor(ifelse(predicted.class=="1", "Bad", "Good")), as.factor(GermanCredit$Class))
+```
+
+
+
+
+
+
+
+
